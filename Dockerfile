@@ -1,27 +1,34 @@
-# ---------- build (Maven + Java 21) ----------
-FROM maven:3.9-eclipse-temurin-21 AS build
+# ---------- build (Gradle + Java 21) ----------
+FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
-COPY pom.xml .
-COPY src ./src
-RUN mvn -q -e -DskipTests clean package
 
-# ---------- runtime (JRE 21 leve, não-root) ----------
+# copie o wrapper e configs do Gradle primeiro (cache melhor)
+COPY gradlew gradlew.bat settings.gradle build.gradle ./
+COPY gradle ./gradle
+
+# copie o código
+COPY src ./src
+
+# garanta permissão de execução do wrapper (importante no Render)
+RUN chmod +x gradlew
+
+# build do jar (sem testes)
+RUN ./gradlew clean bootJar -x test
+
+# ---------- runtime (JRE 21, não-root) ----------
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-# (opcional) variáveis úteis
-ENV PORT=8080 \
-    JAVA_OPTS=""
+ENV PORT=8080 JAVA_OPTS=""
 
-# copia o jar gerado
-COPY --from=build /app/target/mototrack-0.0.1-SNAPSHOT.jar /app/app.jar
+# copie o jar buildado
+COPY --from=build /app/build/libs/*.jar /app/app.jar
 
-# porta de aplicação (local) — no Render ele injeta $PORT
 EXPOSE 8080
 
 # usuário não-root
 RUN useradd -r -u 1001 appuser && chown appuser:appuser /app/app.jar
 USER appuser
 
-# importante: respeitar a porta do Render
+# respeita a porta do Render
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar --server.port=${PORT}"]
