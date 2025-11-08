@@ -2,33 +2,33 @@
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 
-# copie o wrapper e configs do Gradle primeiro (cache melhor)
+# Copia wrapper/configs primeiro para melhorar cache
 COPY gradlew gradlew.bat settings.gradle build.gradle ./
 COPY gradle ./gradle
 
-# copie o código
+# Copia o código
 COPY src ./src
 
-# garanta permissão de execução do wrapper (importante no Render)
+# Permissão do wrapper (importante em Linux/Render)
 RUN chmod +x gradlew
 
-# build do jar (sem testes)
+# Build do JAR (sem testes)
 RUN ./gradlew clean bootJar -x test
 
-# ---------- runtime (JRE 21, não-root) ----------
-FROM eclipse-temurin:21-jre
+
+# ---------- runtime (JRE 21, usuário não-root) ----------
+FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-ENV PORT=8080 JAVA_OPTS=""
-
-# copie o jar buildado
+# Copia o jar buildado
 COPY --from=build /app/build/libs/*.jar /app/app.jar
 
+# Expõe a porta padrão do app (Render injeta PORT em runtime)
 EXPOSE 8080
 
-# usuário não-root
-RUN useradd -r -u 1001 appuser && chown appuser:appuser /app/app.jar
+# Cria usuário não-root e ajusta permissões
+RUN adduser -D -u 10001 appuser && chown appuser:appuser /app/app.jar
 USER appuser
 
-# respeita a porta do Render
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar --server.port=${PORT}"]
+# Sobe com profile prod; sem congelar PORT/DB_* (Render injeta)
+ENTRYPOINT ["java","-Dspring.profiles.active=prod","-jar","/app/app.jar"]
