@@ -9,12 +9,14 @@ version = '0.0.1-SNAPSHOT'
 description = 'Sistema inteligente para gestão de motos - MotoTrack Mottu'
 
 java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
 }
 
 repositories { mavenCentral() }
+
+ext {
+    flywayVersion = '10.17.0'
+}
 
 dependencies {
     // --- Core Spring ---
@@ -26,7 +28,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-cache'
 
     // --- DB & Migrações ---
-    implementation 'org.flywaydb:flyway-core'
+    implementation "org.flywaydb:flyway-core:${flywayVersion}"
+    implementation "org.flywaydb:flyway-database-postgresql:${flywayVersion}"
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly   'org.postgresql:postgresql'
 
@@ -36,9 +39,7 @@ dependencies {
     // --- Utilitários ---
     implementation 'org.modelmapper:modelmapper:3.1.1'
     implementation 'org.thymeleaf.extras:thymeleaf-extras-springsecurity6:3.1.2.RELEASE'
-    implementation 'org.flywaydb:flyway-database-postgresql'
     implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
-
 
     // --- OAuth2 (Google/GitHub) ---
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
@@ -56,3 +57,8 @@ dependencies {
 }
 
 tasks.named('test') { useJUnitPlatform() }
+
+// opcional: facilita o Start Command no Render
+tasks.named('bootJar') {
+    archiveFileName = 'app.jar'
+}
