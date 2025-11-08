@@ -49,7 +49,6 @@ dependencies {
 
     // --- Desenvolvimento ---
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
-    developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
 
     // --- Testes ---
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
