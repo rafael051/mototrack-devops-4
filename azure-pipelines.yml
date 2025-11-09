@@ -1,0 +1,82 @@
+trigger:
+  branches:
+    include: [ main ]
+
+variables:
+- group: mototrack-prod
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: Build
+  displayName: Build & Test & Docker Push
+  jobs:
+  - job: build
+    steps:
+    - checkout: self
+      clean: true
+
+    - task: Gradle@3
+      displayName: "Gradle test & build"
+      inputs:
+        gradleWrapperFile: "gradlew"
+        tasks: "test build"
+        publishJUnitResults: true
+      condition: exists('gradlew')
+
+    - task: Bash@3
+      displayName: "Docker build"
+      inputs:
+        targetType: inline
+        script: |
+          set -e
+          ACR_LOGIN_SERVER=$(az acr show -n $(ACR_NAME) --query loginServer -o tsv)
+          echo "ACR: $ACR_LOGIN_SERVER"
+          docker build -t $ACR_LOGIN_SERVER/$(IMAGE_NAME):$(Build.BuildId) -t $ACR_LOGIN_SERVER/$(IMAGE_NAME):latest .
+
+    - task: AzureCLI@2
+      displayName: "ACR login & push"
+      inputs:
+        azureSubscription: "$(azureServiceConnection)"
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+          ACR_LOGIN_SERVER=$(az acr show -n $(ACR_NAME) --query loginServer -o tsv)
+          az acr login --name $(ACR_NAME)
+          docker push $ACR_LOGIN_SERVER/$(IMAGE_NAME):$(Build.BuildId)
+          docker push $ACR_LOGIN_SERVER/$(IMAGE_NAME):latest
+
+- stage: Deploy
+  displayName: Deploy to Web App for Containers
+  dependsOn: Build
+  jobs:
+  - deployment: webapp
+    displayName: "Update Container"
+    environment: "prod"
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureCLI@2
+            displayName: "Configure Web App container + App Settings"
+            inputs:
+              azureSubscription: "$(azureServiceConnection)"
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -e
+                ACR_LOGIN_SERVER=$(az acr show -n $(ACR_NAME) --query loginServer -o tsv)
+                IMG="$ACR_LOGIN_SERVER/$(IMAGE_NAME):$(Build.BuildId)"
+                echo "Usando imagem: $IMG"
+
+                ACR_USER=$(az acr credential show -n $(ACR_NAME) --query username -o tsv)
+                ACR_PASS=$(az acr credential show -n $(ACR_NAME) --query passwords[0].value -o tsv)
+                az webapp config container set -g $(RG) -n $(WEBAPP_NAME)                   --docker-custom-image-name "$IMG"                   --docker-registry-server-url "https://$ACR_LOGIN_SERVER"                   --docker-registry-server-user "$ACR_USER"                   --docker-registry-server-password "$ACR_PASS"
+
+                az webapp config appsettings set -g $(RG) -n $(WEBAPP_NAME) --settings                   WEBSITES_PORT=$(PORT)                   PORT=$(PORT)                   SPRING_PROFILES_ACTIVE=$(SPRING_PROFILES_ACTIVE)                   ALLOWED_ORIGINS="$(ALLOWED_ORIGINS)"                   DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) DB_NAME=$(DB_NAME) DB_USER="$(DB_USER)" DB_SSLMODE=$(DB_SSLMODE)
+
+                az webapp config appsettings set -g $(RG) -n $(WEBAPP_NAME) --settings DB_PASS=$(DB_PASS)
+
+                az webapp restart -g $(RG) -n $(WEBAPP_NAME)
